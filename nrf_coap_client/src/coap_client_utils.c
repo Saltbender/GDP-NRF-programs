@@ -12,7 +12,7 @@
 #include <zephyr/net/socket.h>
 #include <openthread/thread.h>
 
-#include<stdlib.h>
+#include <zephyr/debug/thread_analyzer.h>
 
 #include "coap_server_client_interface.h"
 #include "coap_client_utils.h"
@@ -25,26 +25,23 @@ static uint32_t poll_period;
 
 static bool is_connected;
 
-static struct k_work unicast_light_work;
-static struct k_work multicast_light_work;
+// static struct k_work send_sensor_data_work;
 static struct k_work toggle_MTD_SED_work;
 static struct k_work on_connect_work;
 static struct k_work on_disconnect_work;
 
 //Testing for implementing k_work object as a member of a parent struct
 //Ease passing of data to the function
+//Contains k_work object inside as well
 
-
-static struct work_var_container provisioning_container = {
-	.testing_data = "original"
-};
+static struct work_var_container provisioning_container;
+static struct work_sensor_container sensor_data_container;
 
 mtd_mode_toggle_cb_t on_mtd_mode_toggle;
 
 /* Options supported by the server */
-static const char *const light_option[] = { LIGHT_URI_PATH, NODE1_URI_PATH, NULL };
-static const char *const provisioning_option[] = { PROVISIONING_URI_PATH,
-						   NULL };
+static const char *const node_option[] = { NODE1_URI_PATH, NULL };
+static const char *const provisioning_option[] = { PROVISIONING_URI_PATH, NULL };
 
 /* Thread multicast mesh local address */
 static struct sockaddr_in6 multicast_local_addr = {
@@ -56,7 +53,7 @@ static struct sockaddr_in6 multicast_local_addr = {
 };
 
 /* Variable for storing server address acquiring in provisioning handshake */
-static char unique_local_addr_str[INET6_ADDRSTRLEN];
+static char unique_local_addr_str[INET6_ADDRSTRLEN] = {0};
 static struct sockaddr_in6 unique_local_addr = {
 	.sin6_family = AF_INET6,
 	.sin6_port = htons(COAP_PORT),
@@ -171,9 +168,9 @@ exit:
 	return ret;
 }
 
-static void toggle_one_light(struct k_work *item)
+static void send_sensor_data(struct k_work *item)
 {
-	uint8_t payload = (uint8_t)THREAD_COAP_UTILS_LIGHT_CMD_TOGGLE;
+	char payload []= "25.0/40/good";
 
 	ARG_UNUSED(item);
 
@@ -184,25 +181,10 @@ static void toggle_one_light(struct k_work *item)
 	}
 
 	LOG_INF("Send 'light' request to: %s", unique_local_addr_str);
+	//thread_analyzer_print();
 	coap_send_request(COAP_METHOD_PUT,
 			  (const struct sockaddr *)&unique_local_addr,
-			  light_option, &payload, sizeof(payload), NULL);
-}
-
-static void toggle_mesh_lights(struct k_work *item)
-{
-	static uint8_t command = (uint8_t)THREAD_COAP_UTILS_LIGHT_CMD_OFF;
-
-	ARG_UNUSED(item);
-
-	command = ((command == THREAD_COAP_UTILS_LIGHT_CMD_OFF) ?
-			   THREAD_COAP_UTILS_LIGHT_CMD_ON :
-			   THREAD_COAP_UTILS_LIGHT_CMD_OFF);
-
-	LOG_INF("Send multicast mesh 'light' request");
-	coap_send_request(COAP_METHOD_PUT,
-			  (const struct sockaddr *)&multicast_local_addr,
-			  light_option, &command, sizeof(command), NULL);
+			  node_option, payload, sizeof(payload), NULL);
 }
 
 static void send_provisioning_request(struct k_work *item)
@@ -214,11 +196,11 @@ static void send_provisioning_request(struct k_work *item)
 	//LOG_INF("Testing data before CONTAINER_OF method: %s", provisioning_container.testing_data);
 
 	//Testing for container of functionality
-	struct work_var_container * container_ptr = CONTAINER_OF(item, struct work_var_container, work_obj);
-	LOG_INF("Testing data originally: %s", container_ptr->testing_data);
-	container_ptr->testing_data = "New value";	
-	LOG_INF("Testing data changed to: %s", container_ptr->testing_data);
-	LOG_INF("Testing data after CONTAINER_OF method: %s", provisioning_container.testing_data);
+	// struct work_var_container * container_ptr = CONTAINER_OF(item, struct work_var_container, work_obj);
+	// LOG_INF("Testing data originally: %s", container_ptr->testing_data);
+	// container_ptr->testing_data = "New value";	
+	// LOG_INF("Testing data changed to: %s", container_ptr->testing_data);
+	// LOG_INF("Testing data after CONTAINER_OF method: %s", provisioning_container.testing_data);
 	// LOG_INF("Provisioning work address that should be used: %x", provisioning_container.work_obj);
 	// LOG_INF("Provisioning work address provided as argument: %x", item);
 	// LOG_INF("Original struct address: %x", &provisioning_container);
@@ -290,31 +272,25 @@ static void submit_work_if_connected(struct k_work *work)
 	}
 }
 
+bool isProvisioned(){
+	return unique_local_addr_str[0];
+}
+
 void coap_client_utils_init(ot_connection_cb_t on_connect,
 			    ot_disconnection_cb_t on_disconnect,
 			    mtd_mode_toggle_cb_t on_toggle)
 {
 	on_mtd_mode_toggle = on_toggle;
 
-	//LOG_INF("Testing data before k_work_init: %s", provisioning_container.testing_data);
-
-
 	coap_init(AF_INET6, NULL);
 
 	k_work_init(&on_connect_work, on_connect);
 	k_work_init(&on_disconnect_work, on_disconnect);
-	k_work_init(&unicast_light_work, toggle_one_light);
-	k_work_init(&multicast_light_work, toggle_mesh_lights);
-
-	//LOG_INF("Address of work before init: %x", provisioning_container.work_obj);
-
+	k_work_init(&sensor_data_container.work_obj, send_sensor_data);
 	k_work_init(&provisioning_container.work_obj, send_provisioning_request);
 
 	openthread_set_state_changed_cb(on_thread_state_changed);
 	openthread_start(openthread_get_default_context());
-
-	//LOG_INF("Address of work after init: %x", provisioning_container.work_obj);
-	//LOG_INF("Testing data after k_work_init: %s", provisioning_container.testing_data);
 
 	if (IS_ENABLED(CONFIG_OPENTHREAD_MTD_SED)) {
 		k_work_init(&toggle_MTD_SED_work,
@@ -323,31 +299,13 @@ void coap_client_utils_init(ot_connection_cb_t on_connect,
 	}
 }
 
-void coap_client_toggle_one_light(void)
+void coap_client_send_sensor_data(uint16_t temperature_data, uint16_t humidity_data)
 {
-	submit_work_if_connected(&unicast_light_work);
-}
-
-void coap_client_toggle_mesh_lights(void)
-{
-	submit_work_if_connected(&multicast_light_work);
+	submit_work_if_connected(&sensor_data_container.work_obj);
 }
 
 void coap_client_send_provisioning_request(void)
 {
-	//Testing for container of functionality
-	// This part definitely works becuase i tested it!
-	//
-	//  struct work_var_container * container_ptr = CONTAINER_OF(&provisioning_container.work_obj, struct work_var_container, work_obj);
-	// LOG_INF("Testing data before work originally: %s", container_ptr->testing_data);
-	// container_ptr->testing_data = "New value";	
-	// LOG_INF("Testing data before work changed to: %s", container_ptr->testing_data);
-
-	// LOG_INF("CONTAINER_OF struct address before work submitted: %x", container_ptr);
-	// LOG_INF("Address that should be used for CONTAINER_OF: %x", &provisioning_container.work_obj);	
-	
-	// //LOG_INF("Testing data before work submitted: %s", provisioning_container.testing_data);
-	// LOG_INF("Address of work to do: %x", provisioning_container.work_obj);
 	submit_work_if_connected(&provisioning_container.work_obj);
 }
 

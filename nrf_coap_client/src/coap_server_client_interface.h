@@ -9,17 +9,8 @@
 
 #define COAP_PORT 5683
 
-/**@brief Enumeration describing light commands. */
-enum light_command {
-	THREAD_COAP_UTILS_LIGHT_CMD_OFF = '0',
-	THREAD_COAP_UTILS_LIGHT_CMD_ON = '1',
-	THREAD_COAP_UTILS_LIGHT_CMD_TOGGLE = '2'
-};
-
-#define PROVISIONING_URI_PATH "provisioning"
-#define LIGHT_URI_PATH "light" 
-#define NODE1_URI_PATH "node1" 
-#define WHOAMI_URI_PATH "whoami"
-#define TIME_URI_PATH "time"
+#define PROVISIONING_URI_PATH "provisioning" 
+#define NODE1_URI_PATH "SensorNode1" 
+#define NODE2_URI_PATH "SensorNode2" 
 
 #endif

@@ -11,62 +11,25 @@
 #include <zephyr/device.h>
 #include <zephyr/pm/device.h>
 
+#include <zephyr/drivers/counter.h>
+#include <zephyr/drivers/i2c.h>
+
 #include "coap_client_utils.h"
 
-#if CONFIG_BT_NUS
-#include "ble_utils.h"
-#endif
-
-LOG_MODULE_REGISTER(coap_client, CONFIG_COAP_CLIENT_LOG_LEVEL);
+LOG_MODULE_DECLARE(coap_client_utils, CONFIG_COAP_CLIENT_UTILS_LOG_LEVEL);
 
 #define OT_CONNECTION_LED DK_LED1
-#define BLE_CONNECTION_LED DK_LED2
+#define COUNTER_LED DK_LED2
 #define MTD_SED_LED DK_LED3
 
-#if CONFIG_BT_NUS
+#define ALARM_DELAY 1000000 /*1 second, units for function is usec*/
+#define ALARM_CHANNEL 0
 
-#define COMMAND_REQUEST_UNICAST 'u'
-#define COMMAND_REQUEST_MULTICAST 'm'
-#define COMMAND_REQUEST_PROVISIONING 'p'
+/*Variables for storing sensor data*/
+static uint16_t temperature;
+static uint16_t humidity;
 
-static void on_nus_received(struct bt_conn *conn, const uint8_t *const data,
-			    uint16_t len)
-{
-	LOG_INF("Received data: %c", data[0]);
-
-	switch (*data) {
-	case COMMAND_REQUEST_UNICAST:
-		coap_client_toggle_one_light();
-		break;
-
-	case COMMAND_REQUEST_MULTICAST:
-		coap_client_toggle_mesh_lights();
-		break;
-
-	case COMMAND_REQUEST_PROVISIONING:
-		coap_client_send_provisioning_request();
-		break;
-
-	default:
-		LOG_WRN("Received invalid data from NUS");
-	}
-}
-
-static void on_ble_connect(struct k_work *item)
-{
-	ARG_UNUSED(item);
-
-	dk_set_led_on(BLE_CONNECTION_LED);
-}
-
-static void on_ble_disconnect(struct k_work *item)
-{
-	ARG_UNUSED(item);
-
-	dk_set_led_off(BLE_CONNECTION_LED);
-}
-
-#endif /* CONFIG_BT_NUS */
+static bool isLedOn = 0;
 
 static void on_ot_connect(struct k_work *item)
 {
@@ -105,11 +68,11 @@ static void on_button_changed(uint32_t button_state, uint32_t has_changed)
 	uint32_t buttons = button_state & has_changed;
 
 	if (buttons & DK_BTN1_MSK) {
-		coap_client_toggle_one_light();
+		coap_client_send_sensor_data(temperature, humidity);
 	}
 
 	if (buttons & DK_BTN2_MSK) {
-		coap_client_toggle_mesh_lights();
+		printk("Nothing going on here");
 	}
 
 	if (buttons & DK_BTN3_MSK) {
@@ -121,11 +84,23 @@ static void on_button_changed(uint32_t button_state, uint32_t has_changed)
 	}
 }
 
+static counter_top_callback_t submit_read_sensor_work (const struct device *dev, void *user_data){
+	ARG_UNUSED(user_data);
+	//printk("countering every second!\n");
+	dk_set_led(COUNTER_LED, !isLedOn); 
+	isLedOn = !isLedOn;
+
+	if (isProvisioned()){
+		coap_client_send_sensor_data(temperature, humidity);
+	}
+}
+
 void main(void)
 {
 	int ret;
 
 	LOG_INF("Start CoAP-client sample");
+	printk("Start CoAP-client sample");
 
 	if (IS_ENABLED(CONFIG_RAM_POWER_DOWN_LIBRARY)) {
 		power_down_unused_ram();
@@ -143,20 +118,30 @@ void main(void)
 		return;
 	}
 
-#if CONFIG_BT_NUS
-	struct bt_nus_cb nus_clbs = {
-		.received = on_nus_received,
-		.sent = NULL,
-	};
+	const struct device* rtc_dev = DEVICE_DT_GET(DT_NODELABEL(rtc2));
+	counter_stop(rtc_dev);
+	struct counter_top_cfg counter_cfg;
+	counter_cfg.ticks = counter_us_to_ticks(rtc_dev, 5*ALARM_DELAY);
+	counter_cfg.callback = submit_read_sensor_work;
+	counter_cfg.user_data = &counter_cfg;
+	ret = counter_set_top_value(rtc_dev, &counter_cfg);
 
-	ret = ble_utils_init(&nus_clbs, on_ble_connect, on_ble_disconnect);
-	if (ret) {
-		LOG_ERR("Cannot init BLE utilities");
-		return;
+
+	if (-EINVAL == ret) {
+		printk("Alarm settings invalid\n");
+	} else if (-ENOTSUP == ret) {
+		printk("Alarm setting request not supported\n");
+	} else if (ret != 0) {
+		printk("Error\n");
 	}
-
-#endif /* CONFIG_BT_NUS */
 
 	coap_client_utils_init(on_ot_connect, on_ot_disconnect,
 			       on_mtd_mode_toggle);
+
+	while (!isProvisioned()){
+		coap_client_send_provisioning_request();
+		printk("waiting for provisioning");
+		k_sleep(K_SECONDS(10));
+	}
+	counter_start(rtc_dev);
 }

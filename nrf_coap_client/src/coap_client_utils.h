@@ -13,8 +13,8 @@
 #ifndef __COAP_CLIENT_UTILS_H__
 #define __COAP_CLIENT_UTILS_H__
 
-/** @brief for implementing k_work object as a member of a parent struct 
- * to ease passing of data to the function
+/** @brief Struct for implementing k_work object as a member of a parent struct 
+ * to enable passing of data to the function
  *
  *  
  */
@@ -22,6 +22,12 @@
 struct work_var_container{
 	struct k_work 	work_obj; 		/*Store the work object here*/
 	char* 		testing_data;	/*Store the testing data here*/
+};
+
+struct work_sensor_container{
+	struct k_work 	work_obj; 		/*Store the work object here*/
+	uint16_t 		temperature;	/*Store the raw temperature data here*/
+	uint16_t		humidity;		/*Store the raw humidity data here*/
 };
 
 /** @brief Type indicates function called when OpenThread connection
@@ -52,19 +58,24 @@ void coap_client_utils_init(ot_connection_cb_t on_connect,
 
 /** @brief Toggle light on the CoAP server node.
  *
- * @note The CoAP server should be paired before to have an affect.
+ * @note The CoAP server should be paired before to have an effect.
  */
-void coap_client_toggle_one_light(void);
+void coap_client_send_sensor_data (uint16_t temperature_data, uint16_t humidity_data);
 
-/** @brief Toggle lights on all CoAP servers in the network mesh.
- */
-void coap_client_toggle_mesh_lights(void);
 
 /** @brief Request for the CoAP server address to pair.
  *
  * @note Enable paring on the CoAP server to get the address.
  */
 void coap_client_send_provisioning_request(void);
+
+/** @brief Function to determine if successful provisioning was performed
+ *  
+ * @note Determined by checking byte-0 of IP address string, which is initialized to 0
+ * After provisioning, the first byte is always set.
+*/
+
+bool isProvisioned(void);
 
 /** @brief Toggle SED to MED and MED to SED modes.
  *
