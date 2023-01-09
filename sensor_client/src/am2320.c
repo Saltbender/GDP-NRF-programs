@@ -8,16 +8,14 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/sensor.h>
 #include <stdlib.h>
+#include <zephyr/logging/log.h>
 
 #include <zephyr/drivers/i2c.h>
 
-/* Included these for USB bla bla*/
-
-#include <zephyr/drivers/uart.h>
-#include <zephyr/usb/usb_device.h>
-#include <zephyr/sys/printk.h>
-
 #define SENSOR_ADDRESS 0x5C
+
+LOG_MODULE_DECLARE(coap_client_utils, CONFIG_COAP_CLIENT_UTILS_LOG_LEVEL);
+
 
 /* Series of commands that need to be provided to the sensor
 * Meaning of values:
@@ -26,22 +24,26 @@
 	0x04: read 4 registers from the sensor
 */
 static uint8_t humidity_temp_send_buffer[3] = {0x03, 0x00, 0x04};
-
+// char* humidity_useless,char* temperature_useless)
 //Receive buffer needs to be length 7
-int getSensorValues(const struct device* dev, uint16_t* humidity, uint16_t* temperature ){
+int getSensorValues(const struct device* dev, uint16_t* humidity,uint16_t* temperature){
 	uint8_t empty_buffer = 0;
 	uint8_t wake_byte_count = 0;
 	uint8_t error;
+
+	// uint16_t humidity;
+	// uint16_t temperature;
 
 	uint8_t receive_buffer[8];
 
 	//Wake up the device
 	error = i2c_write(dev, &empty_buffer, wake_byte_count, SENSOR_ADDRESS);
 
-	k_sleep(K_MSEC(1));
+	// k_sleep(K_MSEC(1));
+	//k_busy_wait(1000);
 	error = i2c_write(dev, humidity_temp_send_buffer, sizeof(humidity_temp_send_buffer)/sizeof(uint8_t), SENSOR_ADDRESS);
 
-	k_sleep(K_MSEC(1));
+	//k_busy_wait(1000);
 	error = i2c_read(dev, receive_buffer, sizeof(receive_buffer)/sizeof(uint8_t), SENSOR_ADDRESS);
 
 	/*Humidity and temperature is receive as 2 bytes, first one for higher byte and second one for lower byte
@@ -53,6 +55,8 @@ int getSensorValues(const struct device* dev, uint16_t* humidity, uint16_t* temp
 	4,5: Temperature
 	6,7: CRC checksum
 	*/
+
+    LOG_INF("RECEIVED DATA!");
 	*humidity = receive_buffer[2] << 8 | receive_buffer[3];
 	*temperature = receive_buffer[4] << 8 | receive_buffer[5];
 
@@ -60,7 +64,6 @@ int getSensorValues(const struct device* dev, uint16_t* humidity, uint16_t* temp
 }
 
 int initI2C (struct device* dev){
-	dev = DEVICE_DT_GET(DT_NODELABEL(i2c0));
 	if (!i2c_configure(dev, I2C_SPEED_STANDARD)){
 		printk("Error configuring the I2C device");
 		return -1;
@@ -70,7 +73,7 @@ int initI2C (struct device* dev){
 		printk("Device %s is not ready\n", dev->name);
 		return -1;
 	}
-
+	LOG_INF("dev %p name %s\n", dev, dev->name);
 	return 0;
 }
 

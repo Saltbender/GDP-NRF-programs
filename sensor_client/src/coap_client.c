@@ -11,8 +11,12 @@
 #include <zephyr/device.h>
 #include <zephyr/pm/device.h>
 
+
+
 #include <zephyr/drivers/counter.h>
 #include <zephyr/drivers/i2c.h>
+
+#include <zephyr/usb/usb_device.h>
 
 #include "coap_client_utils.h"
 #include "am2320.h"
@@ -27,9 +31,12 @@ LOG_MODULE_DECLARE(coap_client_utils, CONFIG_COAP_CLIENT_UTILS_LOG_LEVEL);
 #define ALARM_CHANNEL 0
 
 /*Variables for storing sensor data*/
-static struct device* i2c_dev;
-static uint16_t temperature;
-static uint16_t humidity;
+static const struct device* i2c_dev = DEVICE_DT_GET(DT_NODELABEL(i2c0));
+static uint16_t temperature = 100;
+static uint16_t humidity = 100;
+
+/*Variable for work struct*/
+struct k_work fetch_sensor_work;
 
 static bool isLedOn = 0;
 
@@ -65,14 +72,22 @@ static void on_mtd_mode_toggle(uint32_t med)
 	dk_set_led(MTD_SED_LED, med);
 }
 
+/*Function provided to k_work object, retrieves sensors value*/
+static void fetch_sensor_data(struct k_work *item){
+	ARG_UNUSED(item);
+	getSensorValues(i2c_dev, &humidity, &temperature);
+}
+
+
 /*Callback provided to counter top config*/
 static void submit_read_sensor_work (const struct device *dev, void *user_data){
+	ARG_UNUSED(dev);
 	ARG_UNUSED(user_data);
-	//printk("countering every second!\n");
+	LOG_INF("countering every second!\n");
 	dk_set_led(COUNTER_LED, !isLedOn); 
 	isLedOn = !isLedOn;
 
-	getSensorValues(i2c_dev, &humidity, &temperature);
+	k_work_submit(&fetch_sensor_work);
 
 	if (isProvisioned()){
 		coap_client_send_sensor_data(temperature, humidity);
@@ -82,9 +97,15 @@ static void submit_read_sensor_work (const struct device *dev, void *user_data){
 void main(void)
 {
 	int ret;
+	// uint16_t humidity = 100;
+	// uint16_t temperature = 100;
 
 	LOG_INF("Start CoAP-client sample");
 	printk("Start CoAP-client sample");
+
+	if (usb_enable(NULL)) {
+		return;
+	}
 
 	if (IS_ENABLED(CONFIG_RAM_POWER_DOWN_LIBRARY)) {
 		power_down_unused_ram();
@@ -96,9 +117,15 @@ void main(void)
 		return;
 	}
 
+	/*Initialise k_work related stuff*/
+	k_work_init(&fetch_sensor_work, fetch_sensor_data);
+
 	/*Initialise I2C peripheral for communicating with the sensor*/
 	ret = initI2C(i2c_dev);
-
+	if (ret){
+		LOG_ERR("I2C initialisation error code: %d", ret);
+	}
+	LOG_INF("dev %p name %s\n", i2c_dev, i2c_dev->name);
 	/*Initialise RTC counter device, provide top value and callback function*/
 
 	const struct device* rtc_dev = DEVICE_DT_GET(DT_NODELABEL(rtc2));
@@ -118,6 +145,7 @@ void main(void)
 		printk("Error\n");
 	}
 
+
 	coap_client_utils_init(on_ot_connect, on_ot_disconnect,
 			       on_mtd_mode_toggle);
 
@@ -127,4 +155,20 @@ void main(void)
 		k_sleep(K_SECONDS(10));
 	}
 	counter_start(rtc_dev);
+
+
+	// while (1){
+	// 	LOG_INF("countering every second!\n");
+
+	// 	dk_set_led(COUNTER_LED, !isLedOn); 
+	// 	isLedOn = !isLedOn;
+
+	// 	getSensorValues(i2c_dev, &humidity, &temperature);
+
+	// 	if (isProvisioned()){
+	// 		coap_client_send_sensor_data(temperature, humidity);
+	// 	}
+
+	// 	k_msleep(5000);
+	// }
 }

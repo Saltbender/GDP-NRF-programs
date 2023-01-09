@@ -11,6 +11,6 @@ int initI2C (struct device* dev);
  * 
 */
 
-int getSensorValues(const struct device* dev, uint16_t* humidity, uint16_t* temperature );
+int getSensorValues(const struct device* dev, uint16_t* humidity,uint16_t* temperature);
 
 #endif 

@@ -180,8 +180,9 @@ static void send_sensor_data(struct k_work *item)
 
 	/* Convert temperature into payload, then concat slash,
 	then convert temperature to payload and concat that*/
-	sprintf(payload, "%.1f", sensor_data_container.temperature);
-	sprintf(sprint_buffer, "%.1f", sensor_data_container.humidity);
+	snprintfcb(payload,10, "%.1f", sensor_data_container.temperature);
+	LOG_INF("Payload after sprintf: %s", payload);
+	snprintfcb(sprint_buffer,10 , "%.0f", sensor_data_container.humidity);
 	
 	strcat(payload, slash);
 	strcat(payload, sprint_buffer);
@@ -193,10 +194,11 @@ static void send_sensor_data(struct k_work *item)
 	}
 
 	LOG_INF("Sending sensor data to: %s", unique_local_addr_str);
+	LOG_INF("Payload sent: %s", payload);
 	//thread_analyzer_print();
 	coap_send_request(COAP_METHOD_PUT,
 			  (const struct sockaddr *)&unique_local_addr,
-			  node_option, payload, sizeof(payload), NULL);
+			  node_option, payload, strlen(payload), NULL);
 }
 
 static void send_provisioning_request(struct k_work *item)
@@ -285,6 +287,7 @@ static void submit_work_if_connected(struct k_work *work)
 }
 
 bool isProvisioned(){
+	LOG_INF("Is provisioned, %s",unique_local_addr_str);
 	return unique_local_addr_str[0];
 }
 
@@ -313,9 +316,12 @@ void coap_client_utils_init(ot_connection_cb_t on_connect,
 
 void coap_client_send_sensor_data(uint16_t temperature_data, uint16_t humidity_data)
 {
-	sensor_data_container.humidity = (float) humidity_data/10;
-	sensor_data_container.temperature = (float) temperature_data/10;
+	sensor_data_container.humidity =  (float) humidity_data/10;
+	sensor_data_container.temperature =  (float) temperature_data/10;
 
+	LOG_INF("new value: %f", sensor_data_container.humidity);
+	// sensor_data_container.humidity = 10.0;
+	// sensor_data_container.temperature = 10.0;
 	submit_work_if_connected(&sensor_data_container.work_obj);
 }
 
