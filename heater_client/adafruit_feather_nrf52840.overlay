@@ -1,0 +1,78 @@
+// To get started, press Ctrl+Space to bring up the completion menu and view the available nodes.
+
+// You can also use the buttons in the sidebar to perform actions on nodes.
+// Actions currently available include:
+
+// * Enabling / disabling the node
+// * Adding the bus to a bus
+// * Removing the node
+// * Connecting ADC channels
+
+// For more help, browse the DeviceTree documentation at https://docs.zephyrproject.org/latest/guides/dts/index.html
+// You can also visit the nRF DeviceTree extension documentation at https://nrfconnect.github.io/vscode-nrf-connect/devicetree/nrfdevicetree.html
+
+/ {
+	chosen {
+		zephyr,shell-uart = &cdc_acm_uart0;
+    zephyr,entropy = &rng;
+	};
+};
+
+&zephyr_udc0 {
+	cdc_acm_uart0: cdc_acm_uart0 {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "CDC_ACM_0";
+	};
+};
+
+&feather_spi {
+	
+	status = "okay";
+    cs-gpios = <&feather_header 17 GPIO_ACTIVE_LOW>, /* D10, P0.27 */
+	             <&feather_header 16 GPIO_ACTIVE_LOW>, /* D9, P0.26 */
+               <&feather_header 15 GPIO_ACTIVE_LOW>; /* D6, P0.07 */
+	a: max6675@0 {
+		compatible = "maxim,max6675";
+		reg = <0>;
+		spi-max-frequency = <4300000>;
+	};
+
+	b: max6675@1 {
+		compatible = "maxim,max6675";
+		reg = <1>;
+		spi-max-frequency = <4300000>;
+	};
+
+  c: max6675@2 {
+		compatible = "maxim,max6675";
+		reg = <2>;
+		spi-max-frequency = <4300000>;
+	};
+};
+
+&pwm0{
+    status = "okay";
+    pinctrl-0 = <&pwm0_default>;
+    pinctrl-1 = <&pwm0_sleep>;
+    pinctrl-names = "default", "sleep";
+};
+
+&pinctrl {
+    pwm0_default: pwm0_default {
+      group1 {
+          psels = < NRF_PSEL(PWM_OUT0, 1, 9)>,
+                  < NRF_PSEL(PWM_OUT1, 0, 8)>,
+                  < NRF_PSEL(PWM_OUT2, 0, 6)>;
+          nordic,invert;
+      };
+    };  
+  
+    pwm0_sleep: pwm0_sleep {
+      group1 {
+          psels = < NRF_PSEL(PWM_OUT0, 1, 9)>,
+                  < NRF_PSEL(PWM_OUT1, 1, 8)>,
+                  < NRF_PSEL(PWM_OUT1, 0, 6)>;
+          low-power-enable;
+      };
+    };
+  };
